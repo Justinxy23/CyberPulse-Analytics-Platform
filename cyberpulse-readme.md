@@ -214,7 +214,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Contact
 
 **Justin Christopher Weaver**  
-- Email: [via LinkedIn](https://www.linkedin.com/in/justin-weaver999)
+- Email: [justincollege05@gmail.com]
 - LinkedIn: [justin-weaver999](https://www.linkedin.com/in/justin-weaver999)
 - GitHub: [@justinxy23](https://github.com/justinxy23)
 
