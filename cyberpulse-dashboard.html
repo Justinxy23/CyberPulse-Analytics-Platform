@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberPulse Analytics Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e27;
+            color: #e0e6ed;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1f3a 0%, #0f1427 100%);
+            padding: 1rem 2rem;
+            border-bottom: 2px solid #00d4ff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00d4ff, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: #10b981;
+        }
+
+        .status-indicator.warning {
+            background: #f59e0b;
+        }
+
+        .status-indicator.critical {
+            background: #ef4444;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* Main Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            padding: 2rem;
+        }
+
+        .card {
+            background: linear-gradient(135deg, #1a1f3a 0%, #151933 100%);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(0, 212, 255, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #00d4ff;
+        }
+
+        /* Metrics */
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 1rem 0;
+        }
+
+        .metric-change {
+            font-size: 0.9rem;
+            color: #10b981;
+        }
+
+        .metric-change.negative {
+            color: #ef4444;
+        }
+
+        /* Charts */
+        .chart-container {
+            height: 200px;
+            position: relative;
+            margin-top: 1rem;
+        }
+
+        .chart-placeholder {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, rgba(0, 212, 255, 0.1), rgba(124, 58, 237, 0.1));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        /* Threat List */
+        .threat-list {
+            list-style: none;
+        }
+
+        .threat-item {
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.3s ease;
+        }
+
+        .threat-item:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .threat-severity {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .severity-high {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .severity-medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .severity-low {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        /* Progress Bars */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0.5rem 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        /* Action Buttons */
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .action-btn {
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #00d4ff, #7c3aed);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+
+        /* Real-time Feed */
+        .feed-container {
+            max-height: 300px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .feed-item {
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            background: rgba(0, 0, 0, 0.2);
+            border-left: 3px solid #00d4ff;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .timestamp {
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">CyberPulse Analytics</div>
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-indicator active"></span>
+                <span>System Online</span>
+            </div>
+            <div class="status-item">
+                <span class="status-indicator warning"></span>
+                <span>3 Alerts</span>
+            </div>
+            <div class="status-item">
+                <span class="status-indicator critical"></span>
+                <span>1 Critical</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-grid">
+        <!-- Security Score Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Security Score</h3>
+                <span>🛡️</span>
+            </div>
+            <div class="metric-value">87/100</div>
+            <div class="metric-change">+5% from last week</div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 87%"></div>
+            </div>
+        </div>
+
+        <!-- Active Threats Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Active Threats</h3>
+                <span>⚠️</span>
+            </div>
+            <ul class="threat-list">
+                <li class="threat-item">
+                    <span>Brute Force Attack - SSH</span>
+                    <span class="threat-severity severity-high">HIGH</span>
+                </li>
+                <li class="threat-item">
+                    <span>Suspicious DNS Query</span>
+                    <span class="threat-severity severity-medium">MEDIUM</span>
+                </li>
+                <li class="threat-item">
+                    <span>Unusual Login Pattern</span>
+                    <span class="threat-severity severity-low">LOW</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Project Status Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Sprint Progress</h3>
+                <span>📊</span>
+            </div>
+            <div class="metric-value">72%</div>
+            <div class="metric-change">Sprint 23 - Day 8/14</div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 72%"></div>
+            </div>
+            <div style="margin-top: 1rem; font-size: 0.9rem;">
+                <div>✅ 18 tasks completed</div>
+                <div>🔄 7 in progress</div>
+                <div>📋 6 pending</div>
+            </div>
+        </div>
+
+        <!-- Vulnerability Scan Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Vulnerability Scan</h3>
+                <span>🔍</span>
+            </div>
+            <div class="metric-value">247</div>
+            <div class="metric-change negative">Assets scanned</div>
+            <div style="margin-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
+                    <span>Critical</span>
+                    <span style="color: #ef4444;">3</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
+                    <span>High</span>
+                    <span style="color: #f59e0b;">12</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
+                    <span>Medium</span>
+                    <span style="color: #3b82f6;">28</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
+                    <span>Low</span>
+                    <span style="color: #10b981;">45</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compliance Status Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Compliance Status</h3>
+                <span>✓</span>
+            </div>
+            <div style="margin-top: 1rem;">
+                <div style="margin: 1rem 0;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>SOC2</span>
+                        <span style="color: #10b981;">95%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 95%"></div>
+                    </div>
+                </div>
+                <div style="margin: 1rem 0;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>HIPAA</span>
+                        <span style="color: #10b981;">88%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 88%"></div>
+                    </div>
+                </div>
+                <div style="margin: 1rem 0;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>PCI-DSS</span>
+                        <span style="color: #f59e0b;">76%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 76%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Real-time Feed Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Security Feed</h3>
+                <span>📡</span>
+            </div>
+            <div class="feed-container">
+                <div class="feed-item">
+                    <div>Failed login attempt detected from 192.168.1.105</div>
+                    <div class="timestamp">2 minutes ago</div>
+                </div>
+                <div class="feed-item">
+                    <div>Firewall rule updated: Block port 8080</div>
+                    <div class="timestamp">5 minutes ago</div>
+                </div>
+                <div class="feed-item">
+                    <div>New vulnerability patch available for Apache</div>
+                    <div class="timestamp">12 minutes ago</div>
+                </div>
+                <div class="feed-item">
+                    <div>Successful backup completed</div>
+                    <div class="timestamp">28 minutes ago</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Quick Actions</h3>
+                <span>⚡</span>
+            </div>
+            <div class="action-grid">
+                <button class="action-btn">Run Security Scan</button>
+                <button class="action-btn">Generate Report</button>
+                <button class="action-btn">Deploy Patch</button>
+                <button class="action-btn">View Logs</button>
+            </div>
+        </div>
+
+        <!-- Performance Metrics Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">System Performance</h3>
+                <span>📈</span>
+            </div>
+            <div class="chart-container">
+                <div class="chart-placeholder">
+                    Real-time Performance Chart
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Simulate real-time updates
+        function updateMetrics() {
+            // Update security score
+            const scoreElement = document.querySelector('.metric-value');
+            const currentScore = parseInt(scoreElement.textContent);
+            const newScore = Math.max(0, Math.min(100, currentScore + Math.floor(Math.random() * 5 - 2)));
+            
+            // Add more dynamic updates here
+        }
+
+        // Update every 5 seconds
+        setInterval(updateMetrics, 5000);
+
+        // Add click handlers for buttons
+        document.querySelectorAll('.action-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                console.log(`Action triggered: ${this.textContent}`);
+                // Add actual functionality here
+            });
+        });
+
+        // Smooth scroll for feed
+        const feedContainer = document.querySelector('.feed-container');
+        if (feedContainer) {
+            feedContainer.scrollTop = feedContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>

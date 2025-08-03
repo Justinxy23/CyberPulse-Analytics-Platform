@@ -1,0 +1,355 @@
+# CyberPulse Analytics Platform - Docker Compose Configuration
+# Author: Justin Christopher Weaver
+# Description: Complete stack deployment for development and production
+
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyberpulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cyberpulse
+      POSTGRES_USER: cyberpulse_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecurePassword123!}
+      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=pg_stat_statements"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/schema/functions.sql:/docker-entrypoint-initdb.d/02-functions.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - cyberpulse-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cyberpulse_admin -d cyberpulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: cyberpulse-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-RedisPassword123!}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - cyberpulse-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cyberpulse-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://cyberpulse_admin:${DB_PASSWORD:-SecurePassword123!}@postgres:5432/cyberpulse
+      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-here}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    networks:
+      - cyberpulse-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Web Dashboard (Nginx + Static Files)
+  web:
+    image: nginx:alpine
+    container_name: cyberpulse-web
+    restart: unless-stopped
+    volumes:
+      - ./src/dashboard:/usr/share/nginx/html
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api
+    networks:
+      - cyberpulse-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker for Background Tasks
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cyberpulse-celery-worker
+    restart: unless-stopped
+    command: celery -A src.tasks.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://cyberpulse_admin:${DB_PASSWORD:-SecurePassword123!}@postgres:5432/cyberpulse
+      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379/1
+    depends_on:
+      - postgres
+      - redis
+      - api
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    networks:
+      - cyberpulse-network
+
+  # Celery Beat for Scheduled Tasks
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cyberpulse-celery-beat
+    restart: unless-stopped
+    command: celery -A src.tasks.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://cyberpulse_admin:${DB_PASSWORD:-SecurePassword123!}@postgres:5432/cyberpulse
+      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - celery-worker
+    volumes:
+      - ./src:/app/src
+    networks:
+      - cyberpulse-network
+
+  # Flower - Celery Monitoring
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cyberpulse-flower
+    restart: unless-stopped
+    command: celery -A src.tasks.celery_app flower --port=5555
+    environment:
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-RedisPassword123!}@redis:6379/0
+      FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - cyberpulse-network
+
+  # Elasticsearch for Log Analysis
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: cyberpulse-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - cyberpulse-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana for Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.1
+    container_name: cyberpulse-kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD:-KibanaPassword123!}
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - cyberpulse-network
+
+  # Prometheus for Metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cyberpulse-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - cyberpulse-network
+    depends_on:
+      - api
+
+  # Grafana for Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cyberpulse-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    networks:
+      - cyberpulse-network
+    depends_on:
+      - prometheus
+
+  # MinIO for S3-compatible Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: cyberpulse-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - cyberpulse-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Vault for Secrets Management
+  vault:
+    image: vault:latest
+    container_name: cyberpulse-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:-myroot}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    networks:
+      - cyberpulse-network
+
+  # Security Scanner Service
+  scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile.scanner
+    container_name: cyberpulse-scanner
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8080
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-3600}
+    depends_on:
+      - api
+    volumes:
+      - ./scripts:/app/scripts
+      - scanner_data:/app/data
+    networks:
+      - cyberpulse-network
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+  # Backup Service
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    container_name: cyberpulse-backup
+    restart: unless-stopped
+    environment:
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-"0 2 * * *"}
+      S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - postgres_data:/data/postgres:ro
+      - redis_data:/data/redis:ro
+      - ./backups:/backups
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cyberpulse-network
+
+networks:
+  cyberpulse-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  minio_data:
+    driver: local
+  scanner_data:
+    driver: local
+
+# Development overrides (create docker-compose.override.yml for local development)
+# Example override file:
+# version: '3.9'
+# services:
+#   api:
+#     volumes:
+#       - ./src:/app/src
+#     environment:
+#       - RELOAD=true
+#       - LOG_LEVEL=debug

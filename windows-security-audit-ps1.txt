@@ -1,0 +1,644 @@
+# CyberPulse Analytics Platform - Windows Security Auditor
+# Author: Justin Christopher Weaver
+# Description: Comprehensive Windows security auditing and monitoring script
+# Requires: PowerShell 5.1+ with Administrator privileges
+
+#Requires -RunAsAdministrator
+#Requires -Version 5.1
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory=$false)]
+    [ValidateSet('Quick','Standard','Comprehensive')]
+    [string]$ScanType = 'Standard',
+    
+    [Parameter(Mandatory=$false)]
+    [string]$OutputPath = "$PSScriptRoot\SecurityAudit_$(Get-Date -Format 'yyyyMMdd_HHmmss')",
+    
+    [Parameter(Mandatory=$false)]
+    [string]$APIEndpoint = "https://cyberpulse.local/api/v1/audit",
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$SendToAPI,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$GenerateReport
+)
+
+# Initialize logging
+$ErrorActionPreference = 'Continue'
+$VerbosePreference = 'Continue'
+
+# Create output directory
+New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+
+# Start transcript
+Start-Transcript -Path "$OutputPath\AuditLog.txt" -Force
+
+Write-Host @"
+╔═══════════════════════════════════════════════════════════════╗
+║          CyberPulse Windows Security Auditor v1.0             ║
+║                  Author: Justin C. Weaver                      ║
+╚═══════════════════════════════════════════════════════════════╝
+"@ -ForegroundColor Cyan
+
+Write-Host "`n[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting $ScanType security audit..." -ForegroundColor Green
+
+# Security audit result object
+$AuditResults = @{
+    SystemInfo = @{}
+    SecuritySettings = @{}
+    UserAccounts = @{}
+    NetworkConfig = @{}
+    FirewallStatus = @{}
+    AntivirusStatus = @{}
+    Updates = @{}
+    Services = @{}
+    Processes = @{}
+    EventLogs = @{}
+    Vulnerabilities = @()
+    ComplianceChecks = @{}
+    Recommendations = @()
+    Score = 100
+}
+
+#region Helper Functions
+
+function Write-Finding {
+    param(
+        [string]$Category,
+        [string]$Finding,
+        [ValidateSet('Critical','High','Medium','Low','Info')]
+        [string]$Severity = 'Info',
+        [string]$Recommendation = ''
+    )
+    
+    $finding = @{
+        Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Category = $Category
+        Finding = $Finding
+        Severity = $Severity
+        Recommendation = $Recommendation
+    }
+    
+    $AuditResults.Vulnerabilities += $finding
+    
+    # Deduct points based on severity
+    switch ($Severity) {
+        'Critical' { $Script:AuditResults.Score -= 10 }
+        'High' { $Script:AuditResults.Score -= 5 }
+        'Medium' { $Script:AuditResults.Score -= 2 }
+        'Low' { $Script:AuditResults.Score -= 0.5 }
+    }
+    
+    # Color code output
+    $color = switch ($Severity) {
+        'Critical' { 'Red' }
+        'High' { 'DarkRed' }
+        'Medium' { 'Yellow' }
+        'Low' { 'DarkYellow' }
+        'Info' { 'Gray' }
+    }
+    
+    Write-Host "[$Severity] $Finding" -ForegroundColor $color
+}
+
+function Test-RegistryValue {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+    
+    try {
+        $value = Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-SecurityScore {
+    param($AuditResults)
+    
+    $score = [Math]::Max(0, $AuditResults.Score)
+    return [Math]::Round($score, 2)
+}
+
+#endregion
+
+#region System Information
+
+Write-Host "`n[*] Gathering System Information..." -ForegroundColor Cyan
+
+try {
+    $os = Get-CimInstance Win32_OperatingSystem
+    $cs = Get-CimInstance Win32_ComputerSystem
+    $bios = Get-CimInstance Win32_BIOS
+    
+    $AuditResults.SystemInfo = @{
+        ComputerName = $env:COMPUTERNAME
+        Domain = $cs.Domain
+        OSVersion = $os.Version
+        OSBuild = $os.BuildNumber
+        OSArchitecture = $os.OSArchitecture
+        LastBoot = $os.LastBootUpTime
+        BIOSVersion = $bios.SMBIOSBIOSVersion
+        SecureBootEnabled = (Confirm-SecureBootUEFI -ErrorAction SilentlyContinue)
+        TPMEnabled = (Get-Tpm -ErrorAction SilentlyContinue).TpmPresent
+    }
+    
+    # Check for outdated OS
+    if ([int]$os.BuildNumber -lt 19044) { # Windows 10 21H2
+        Write-Finding -Category "System" -Finding "Outdated Windows version detected" -Severity "High" `
+            -Recommendation "Update to the latest Windows version for security patches"
+    }
+}
+catch {
+    Write-Warning "Failed to gather system information: $_"
+}
+
+#endregion
+
+#region User Account Auditing
+
+Write-Host "`n[*] Auditing User Accounts..." -ForegroundColor Cyan
+
+try {
+    # Get all local users
+    $localUsers = Get-LocalUser | Select-Object Name, Enabled, LastLogon, PasswordExpires, 
+        PasswordChangeableDate, PasswordLastSet, UserMayChangePassword, PasswordRequired
+    
+    $AuditResults.UserAccounts.LocalUsers = $localUsers
+    
+    # Check for accounts with non-expiring passwords
+    $nonExpiringPwdUsers = $localUsers | Where-Object { $_.PasswordExpires -eq $null -and $_.Enabled }
+    if ($nonExpiringPwdUsers) {
+        foreach ($user in $nonExpiringPwdUsers) {
+            Write-Finding -Category "User Accounts" `
+                -Finding "User '$($user.Name)' has non-expiring password" `
+                -Severity "Medium" `
+                -Recommendation "Configure password expiration policy for all users"
+        }
+    }
+    
+    # Check for disabled Administrator account (security best practice)
+    $adminAccount = Get-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
+    if ($adminAccount -and $adminAccount.Enabled) {
+        Write-Finding -Category "User Accounts" `
+            -Finding "Built-in Administrator account is enabled" `
+            -Severity "High" `
+            -Recommendation "Disable the built-in Administrator account and use named admin accounts"
+    }
+    
+    # Check for Guest account
+    $guestAccount = Get-LocalUser -Name "Guest" -ErrorAction SilentlyContinue
+    if ($guestAccount -and $guestAccount.Enabled) {
+        Write-Finding -Category "User Accounts" `
+            -Finding "Guest account is enabled" `
+            -Severity "High" `
+            -Recommendation "Disable the Guest account"
+    }
+    
+    # Get group memberships
+    $adminGroupMembers = Get-LocalGroupMember -Group "Administrators" -ErrorAction SilentlyContinue
+    $AuditResults.UserAccounts.Administrators = $adminGroupMembers
+    
+    # Check for excessive admin accounts
+    if ($adminGroupMembers.Count -gt 3) {
+        Write-Finding -Category "User Accounts" `
+            -Finding "Excessive number of administrator accounts ($($adminGroupMembers.Count))" `
+            -Severity "Medium" `
+            -Recommendation "Review and minimize administrator group membership"
+    }
+}
+catch {
+    Write-Warning "Failed to audit user accounts: $_"
+}
+
+#endregion
+
+#region Security Settings Audit
+
+Write-Host "`n[*] Checking Security Settings..." -ForegroundColor Cyan
+
+try {
+    # Check UAC settings
+    $uacKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+    $enableLUA = (Get-ItemProperty -Path $uacKey -Name "EnableLUA" -ErrorAction SilentlyContinue).EnableLUA
+    $consentPromptBehaviorAdmin = (Get-ItemProperty -Path $uacKey -Name "ConsentPromptBehaviorAdmin" -ErrorAction SilentlyContinue).ConsentPromptBehaviorAdmin
+    
+    if ($enableLUA -ne 1) {
+        Write-Finding -Category "Security Settings" `
+            -Finding "UAC is disabled" `
+            -Severity "Critical" `
+            -Recommendation "Enable User Account Control (UAC) immediately"
+    }
+    
+    # Check Windows Defender status
+    try {
+        $defenderStatus = Get-MpComputerStatus
+        $AuditResults.AntivirusStatus = @{
+            AntivirusEnabled = $defenderStatus.AntivirusEnabled
+            AntispywareEnabled = $defenderStatus.AntispywareEnabled
+            RealTimeProtectionEnabled = $defenderStatus.RealTimeProtectionEnabled
+            BehaviorMonitorEnabled = $defenderStatus.BehaviorMonitorEnabled
+            IoavProtectionEnabled = $defenderStatus.IoavProtectionEnabled
+            NISEnabled = $defenderStatus.NISEnabled
+            AntivirusSignatureLastUpdated = $defenderStatus.AntivirusSignatureLastUpdated
+        }
+        
+        if (-not $defenderStatus.RealTimeProtectionEnabled) {
+            Write-Finding -Category "Antivirus" `
+                -Finding "Windows Defender Real-Time Protection is disabled" `
+                -Severity "Critical" `
+                -Recommendation "Enable Windows Defender Real-Time Protection"
+        }
+        
+        # Check if definitions are outdated
+        $daysSinceUpdate = ((Get-Date) - $defenderStatus.AntivirusSignatureLastUpdated).Days
+        if ($daysSinceUpdate -gt 7) {
+            Write-Finding -Category "Antivirus" `
+                -Finding "Antivirus definitions are $daysSinceUpdate days old" `
+                -Severity "High" `
+                -Recommendation "Update antivirus definitions immediately"
+        }
+    }
+    catch {
+        Write-Warning "Unable to query Windows Defender status: $_"
+    }
+    
+    # Check PowerShell execution policy
+    $executionPolicy = Get-ExecutionPolicy
+    if ($executionPolicy -eq 'Unrestricted' -or $executionPolicy -eq 'Bypass') {
+        Write-Finding -Category "Security Settings" `
+            -Finding "PowerShell execution policy is set to '$executionPolicy'" `
+            -Severity "High" `
+            -Recommendation "Set PowerShell execution policy to 'RemoteSigned' or 'AllSigned'"
+    }
+    
+    # Check SMBv1
+    $smbv1 = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction SilentlyContinue
+    if ($smbv1.State -eq 'Enabled') {
+        Write-Finding -Category "Security Settings" `
+            -Finding "SMBv1 is enabled" `
+            -Severity "High" `
+            -Recommendation "Disable SMBv1 protocol (vulnerable to ransomware attacks)"
+    }
+}
+catch {
+    Write-Warning "Failed to check security settings: $_"
+}
+
+#endregion
+
+#region Network Configuration Audit
+
+Write-Host "`n[*] Auditing Network Configuration..." -ForegroundColor Cyan
+
+try {
+    # Get network adapters
+    $networkAdapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+    $AuditResults.NetworkConfig.Adapters = $networkAdapters | Select-Object Name, InterfaceDescription, MacAddress, Status
+    
+    # Check for open ports
+    $listeningPorts = Get-NetTCPConnection -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess
+    $AuditResults.NetworkConfig.ListeningPorts = $listeningPorts
+    
+    # Check for common vulnerable ports
+    $vulnerablePorts = @(135, 139, 445, 3389, 5985, 5986) # RPC, NetBIOS, SMB, RDP, WinRM
+    foreach ($port in $vulnerablePorts) {
+        if ($listeningPorts.LocalPort -contains $port) {
+            $serviceName = switch ($port) {
+                135 { "RPC" }
+                139 { "NetBIOS" }
+                445 { "SMB" }
+                3389 { "RDP" }
+                5985 { "WinRM HTTP" }
+                5986 { "WinRM HTTPS" }
+            }
+            Write-Finding -Category "Network" `
+                -Finding "Port $port ($serviceName) is open and listening" `
+                -Severity "Medium" `
+                -Recommendation "Review if $serviceName service is required; restrict access if needed"
+        }
+    }
+    
+    # Check Windows Firewall status
+    $firewallProfiles = Get-NetFirewallProfile
+    $AuditResults.FirewallStatus = @{}
+    
+    foreach ($profile in $firewallProfiles) {
+        $AuditResults.FirewallStatus[$profile.Name] = @{
+            Enabled = $profile.Enabled
+            DefaultInboundAction = $profile.DefaultInboundAction
+            DefaultOutboundAction = $profile.DefaultOutboundAction
+        }
+        
+        if (-not $profile.Enabled) {
+            Write-Finding -Category "Firewall" `
+                -Finding "Windows Firewall is disabled for $($profile.Name) profile" `
+                -Severity "Critical" `
+                -Recommendation "Enable Windows Firewall for all network profiles"
+        }
+    }
+}
+catch {
+    Write-Warning "Failed to audit network configuration: $_"
+}
+
+#endregion
+
+#region Windows Updates Audit
+
+if ($ScanType -ne 'Quick') {
+    Write-Host "`n[*] Checking Windows Updates..." -ForegroundColor Cyan
+    
+    try {
+        # Check for pending updates
+        $updateSession = New-Object -ComObject Microsoft.Update.Session
+        $updateSearcher = $updateSession.CreateUpdateSearcher()
+        $searchResult = $updateSearcher.Search("IsInstalled=0")
+        
+        $AuditResults.Updates = @{
+            PendingUpdates = $searchResult.Updates.Count
+            CriticalUpdates = ($searchResult.Updates | Where-Object { $_.MsrcSeverity -eq 'Critical' }).Count
+            ImportantUpdates = ($searchResult.Updates | Where-Object { $_.MsrcSeverity -eq 'Important' }).Count
+        }
+        
+        if ($searchResult.Updates.Count -gt 0) {
+            Write-Finding -Category "Updates" `
+                -Finding "$($searchResult.Updates.Count) Windows updates are pending" `
+                -Severity $(if ($AuditResults.Updates.CriticalUpdates -gt 0) { 'Critical' } else { 'High' }) `
+                -Recommendation "Install all pending Windows updates immediately"
+        }
+        
+        # Check last update installation date
+        $lastUpdate = Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1
+        $daysSinceLastUpdate = ((Get-Date) - $lastUpdate.InstalledOn).Days
+        
+        if ($daysSinceLastUpdate -gt 30) {
+            Write-Finding -Category "Updates" `
+                -Finding "No updates installed in the last $daysSinceLastUpdate days" `
+                -Severity "High" `
+                -Recommendation "Configure automatic Windows updates"
+        }
+    }
+    catch {
+        Write-Warning "Failed to check Windows updates: $_"
+    }
+}
+
+#endregion
+
+#region Service Audit
+
+if ($ScanType -eq 'Comprehensive') {
+    Write-Host "`n[*] Auditing Windows Services..." -ForegroundColor Cyan
+    
+    try {
+        # Get all services
+        $services = Get-Service | Where-Object { $_.StartType -ne 'Disabled' }
+        
+        # Check for services running as SYSTEM or Administrator
+        $wmiServices = Get-WmiObject Win32_Service | Where-Object { 
+            $_.StartName -like "*SYSTEM*" -or 
+            $_.StartName -like "*Administrator*" 
+        }
+        
+        $AuditResults.Services = @{
+            TotalServices = $services.Count
+            RunningServices = ($services | Where-Object { $_.Status -eq 'Running' }).Count
+            HighPrivilegeServices = $wmiServices.Count
+        }
+        
+        # Check for unsigned services
+        foreach ($service in $services | Where-Object { $_.Status -eq 'Running' }) {
+            $servicePath = (Get-WmiObject Win32_Service -Filter "Name='$($service.Name)'").PathName
+            if ($servicePath -and (Test-Path $servicePath.Split('"')[1] -ErrorAction SilentlyContinue)) {
+                $signature = Get-AuthenticodeSignature -FilePath $servicePath.Split('"')[1] -ErrorAction SilentlyContinue
+                if ($signature -and $signature.Status -ne 'Valid') {
+                    Write-Finding -Category "Services" `
+                        -Finding "Service '$($service.Name)' is unsigned or has invalid signature" `
+                        -Severity "Medium" `
+                        -Recommendation "Verify the legitimacy of unsigned services"
+                }
+            }
+        }
+    }
+    catch {
+        Write-Warning "Failed to audit services: $_"
+    }
+}
+
+#endregion
+
+#region Event Log Analysis
+
+Write-Host "`n[*] Analyzing Security Event Logs..." -ForegroundColor Cyan
+
+try {
+    # Get recent security events
+    $startTime = (Get-Date).AddDays(-7)
+    
+    # Failed logon attempts
+    $failedLogons = Get-WinEvent -FilterHashtable @{
+        LogName = 'Security'
+        ID = 4625
+        StartTime = $startTime
+    } -ErrorAction SilentlyContinue | Measure-Object
+    
+    # Successful logons
+    $successfulLogons = Get-WinEvent -FilterHashtable @{
+        LogName = 'Security'
+        ID = 4624
+        StartTime = $startTime
+    } -ErrorAction SilentlyContinue | Measure-Object
+    
+    # Account lockouts
+    $accountLockouts = Get-WinEvent -FilterHashtable @{
+        LogName = 'Security'
+        ID = 4740
+        StartTime = $startTime
+    } -ErrorAction SilentlyContinue | Measure-Object
+    
+    $AuditResults.EventLogs = @{
+        FailedLogons = $failedLogons.Count
+        SuccessfulLogons = $successfulLogons.Count
+        AccountLockouts = $accountLockouts.Count
+    }
+    
+    if ($failedLogons.Count -gt 100) {
+        Write-Finding -Category "Event Logs" `
+            -Finding "High number of failed logon attempts ($($failedLogons.Count) in last 7 days)" `
+            -Severity "High" `
+            -Recommendation "Investigate failed logon attempts for potential brute force attacks"
+    }
+    
+    if ($accountLockouts.Count -gt 10) {
+        Write-Finding -Category "Event Logs" `
+            -Finding "Multiple account lockouts detected ($($accountLockouts.Count) in last 7 days)" `
+            -Severity "Medium" `
+            -Recommendation "Review account lockout events for potential security issues"
+    }
+}
+catch {
+    Write-Warning "Failed to analyze event logs: $_"
+}
+
+#endregion
+
+#region Compliance Checks
+
+Write-Host "`n[*] Running Compliance Checks..." -ForegroundColor Cyan
+
+# CIS Benchmark checks (simplified examples)
+$AuditResults.ComplianceChecks = @{
+    PasswordPolicy = @{}
+    AuditPolicy = @{}
+    UserRights = @{}
+}
+
+try {
+    # Check password policy
+    $passwordPolicy = Get-ADDefaultDomainPasswordPolicy -ErrorAction SilentlyContinue
+    if ($passwordPolicy) {
+        if ($passwordPolicy.MinPasswordLength -lt 14) {
+            Write-Finding -Category "Compliance" `
+                -Finding "Minimum password length is less than 14 characters" `
+                -Severity "Medium" `
+                -Recommendation "Set minimum password length to at least 14 characters"
+        }
+        
+        if ($passwordPolicy.PasswordHistoryCount -lt 24) {
+            Write-Finding -Category "Compliance" `
+                -Finding "Password history is less than 24 passwords" `
+                -Severity "Low" `
+                -Recommendation "Increase password history to remember at least 24 passwords"
+        }
+    }
+}
+catch {
+    Write-Verbose "Unable to check domain password policy (may not be domain-joined)"
+}
+
+#endregion
+
+#region Generate Report
+
+$finalScore = Get-SecurityScore -AuditResults $AuditResults
+$AuditResults.Score = $finalScore
+
+Write-Host "`n[*] Security Audit Complete!" -ForegroundColor Green
+Write-Host "    Security Score: $finalScore/100" -ForegroundColor $(
+    if ($finalScore -ge 80) { 'Green' }
+    elseif ($finalScore -ge 60) { 'Yellow' }
+    else { 'Red' }
+)
+
+# Export results to JSON
+$jsonPath = "$OutputPath\AuditResults.json"
+$AuditResults | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Force
+Write-Host "`n[+] Results saved to: $jsonPath" -ForegroundColor Green
+
+# Generate HTML report if requested
+if ($GenerateReport) {
+    Write-Host "`n[*] Generating HTML report..." -ForegroundColor Cyan
+    
+    $htmlReport = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CyberPulse Security Audit Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .header { background-color: #1a1f3a; color: white; padding: 20px; border-radius: 10px; }
+        .score { font-size: 48px; font-weight: bold; margin: 20px 0; }
+        .score.good { color: #10b981; }
+        .score.warning { color: #f59e0b; }
+        .score.critical { color: #ef4444; }
+        .section { background-color: white; margin: 20px 0; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .finding { margin: 10px 0; padding: 10px; border-left: 4px solid; }
+        .finding.Critical { border-color: #ef4444; background-color: #fee; }
+        .finding.High { border-color: #dc2626; background-color: #fef2f2; }
+        .finding.Medium { border-color: #f59e0b; background-color: #fffbeb; }
+        .finding.Low { border-color: #eab308; background-color: #fefce8; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f0f0f0; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CyberPulse Security Audit Report</h1>
+        <p>Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+        <p>System: $($AuditResults.SystemInfo.ComputerName)</p>
+    </div>
+    
+    <div class="section">
+        <h2>Security Score</h2>
+        <div class="score $(if ($finalScore -ge 80) { 'good' } elseif ($finalScore -ge 60) { 'warning' } else { 'critical' })">
+            $finalScore/100
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>Executive Summary</h2>
+        <table>
+            <tr><th>Category</th><th>Findings</th></tr>
+            <tr><td>Critical</td><td>$(($AuditResults.Vulnerabilities | Where-Object { $_.Severity -eq 'Critical' }).Count)</td></tr>
+            <tr><td>High</td><td>$(($AuditResults.Vulnerabilities | Where-Object { $_.Severity -eq 'High' }).Count)</td></tr>
+            <tr><td>Medium</td><td>$(($AuditResults.Vulnerabilities | Where-Object { $_.Severity -eq 'Medium' }).Count)</td></tr>
+            <tr><td>Low</td><td>$(($AuditResults.Vulnerabilities | Where-Object { $_.Severity -eq 'Low' }).Count)</td></tr>
+        </table>
+    </div>
+    
+    <div class="section">
+        <h2>Security Findings</h2>
+        $(foreach ($finding in $AuditResults.Vulnerabilities | Sort-Object { 
+            switch ($_.Severity) { 'Critical' {1} 'High' {2} 'Medium' {3} 'Low' {4} 'Info' {5} }
+        }) {
+            "<div class='finding $($finding.Severity)'>
+                <strong>[$($finding.Severity)]</strong> $($finding.Finding)<br>
+                <small>Category: $($finding.Category)</small><br>
+                $(if ($finding.Recommendation) { "<em>Recommendation: $($finding.Recommendation)</em>" })
+            </div>"
+        })
+    </div>
+    
+    <div class="section">
+        <h2>System Information</h2>
+        <table>
+            $(foreach ($key in $AuditResults.SystemInfo.Keys) {
+                "<tr><td>$key</td><td>$($AuditResults.SystemInfo[$key])</td></tr>"
+            })
+        </table>
+    </div>
+</body>
+</html>
+"@
+
+    $htmlPath = "$OutputPath\SecurityAuditReport.html"
+    $htmlReport | Out-File -FilePath $htmlPath -Force
+    Write-Host "[+] HTML report saved to: $htmlPath" -ForegroundColor Green
+}
+
+# Send to API if requested
+if ($SendToAPI) {
+    try {
+        Write-Host "`n[*] Sending results to API..." -ForegroundColor Cyan
+        $body = $AuditResults | ConvertTo-Json -Depth 10
+        $response = Invoke-RestMethod -Uri $APIEndpoint -Method Post -Body $body -ContentType "application/json"
+        Write-Host "[+] Results successfully sent to API" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Failed to send results to API: $_"
+    }
+}
+
+#endregion
+
+# Stop transcript
+Stop-Transcript
+
+Write-Host "`n[*] Audit complete. Check $OutputPath for detailed results." -ForegroundColor Green

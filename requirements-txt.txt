@@ -1,0 +1,156 @@
+# CyberPulse Analytics Platform - Python Dependencies
+# Author: Justin Christopher Weaver
+# Python 3.9+ required
+
+# Core Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic[email]==2.5.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Redis for caching and pub/sub
+redis==5.0.1
+hiredis==2.2.3
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+cryptography==41.0.7
+
+# ML and Data Science
+numpy==1.26.2
+pandas==2.1.3
+scikit-learn==1.3.2
+scipy==1.11.4
+
+# Async HTTP
+aiohttp==3.9.1
+httpx==0.25.2
+
+# Monitoring & Metrics
+prometheus-client==0.19.0
+
+# Task Queue
+celery==5.3.4
+flower==2.0.1
+
+# Cloud SDKs
+boto3==1.29.7  # AWS
+azure-storage-blob==12.19.0  # Azure
+google-cloud-storage==2.10.0  # GCP
+
+# Logging & Debugging
+python-json-logger==2.0.7
+sentry-sdk==1.38.0
+
+# Data Validation
+jsonschema==4.20.0
+python-dateutil==2.8.2
+
+# Security Scanning Integration
+python-nmap==0.7.1
+requests==2.31.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2  # For testing FastAPI
+
+# Development Tools
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.5.0
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.4.14
+
+# Visualization (for reports)
+matplotlib==3.8.2
+seaborn==0.13.0
+plotly==5.18.0
+
+# Environment Management
+python-dotenv==1.0.0
+
+# Rate Limiting
+slowapi==0.1.9
+
+# CORS Support
+python-cors==1.0.1
+
+# WebSocket Support
+websockets==12.0
+
+# Email Notifications
+aiosmtplib==3.0.1
+
+# File Processing
+openpyxl==3.1.2  # Excel files
+python-docx==1.1.0  # Word documents
+PyPDF2==3.0.1  # PDF files
+
+# Scheduling
+apscheduler==3.10.4
+
+# Configuration Management
+pyyaml==6.0.1
+toml==0.10.2
+
+# API Documentation
+flasgger==0.9.7.1
+
+# Security Headers
+secure==0.3.0
+
+# Geolocation (for IP analysis)
+geoip2==4.7.0
+
+# Performance
+orjson==3.9.10  # Fast JSON
+ujson==5.8.0
+
+# Graph Analysis (for relationship mapping)
+networkx==3.2.1
+
+# Time Series Analysis
+statsmodels==0.14.0
+
+# Natural Language Processing (for log analysis)
+nltk==3.8.1
+textblob==0.17.1
+
+# Compression
+python-snappy==0.6.1
+
+# Message Queue
+aiokafka==0.10.0
+
+# OpenAPI Client Generation
+openapi-python-client==0.16.0
+
+# Feature Flags
+python-feature-flag==1.1.0
+
+# Secrets Management
+hvac==2.0.0  # HashiCorp Vault client
+
+# Distributed Tracing
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+
+# GraphQL Support (optional)
+strawberry-graphql[fastapi]==0.215.1
+
+# Additional Security Tools
+bandit==1.7.5  # Security linter
+safety==3.0.1  # Dependency checker

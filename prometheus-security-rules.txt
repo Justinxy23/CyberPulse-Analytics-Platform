@@ -1,0 +1,279 @@
+# CyberPulse Analytics Platform - Security Alert Rules
+# Author: Justin Christopher Weaver
+# Description: Prometheus alerting rules for security monitoring
+
+groups:
+  - name: security_alerts
+    interval: 30s
+    rules:
+      # Critical Security Alerts
+      - alert: CriticalSecurityThreat
+        expr: cyberpulse_security_events_total{severity="CRITICAL"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+          pager: true
+        annotations:
+          summary: "Critical security threat detected"
+          description: "{{ $labels.threat_type }} detected from {{ $labels.source_ip }}"
+          runbook_url: "https://docs.cyberpulse.io/runbooks/critical-threat"
+          
+      - alert: ActiveDataExfiltration
+        expr: rate(cyberpulse_bytes_transferred[5m]) > 1000000000
+        for: 2m
+        labels:
+          severity: critical
+          team: security
+          pager: true
+        annotations:
+          summary: "Potential data exfiltration in progress"
+          description: "Abnormal data transfer detected: {{ $value | humanize }}B/s"
+          
+      - alert: BruteForceAttack
+        expr: rate(cyberpulse_failed_login_attempts[5m]) > 50
+        for: 3m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Brute force attack detected"
+          description: "{{ $value }} failed login attempts per second from {{ $labels.source_ip }}"
+          
+      - alert: SecurityScoreDropped
+        expr: cyberpulse_security_score < 70
+        for: 5m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Security score below threshold"
+          description: "Security score dropped to {{ $value }}/100"
+          
+      # Malware Detection
+      - alert: MalwareDetected
+        expr: cyberpulse_malware_detections > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+          pager: true
+        annotations:
+          summary: "Malware detected on {{ $labels.hostname }}"
+          description: "Malware type: {{ $labels.malware_type }}, File: {{ $labels.file_path }}"
+          
+      - alert: RansomwareActivity
+        expr: cyberpulse_file_encryption_rate > 100
+        for: 30s
+        labels:
+          severity: critical
+          team: security
+          pager: true
+          auto_isolate: true
+        annotations:
+          summary: "Potential ransomware activity"
+          description: "Rapid file encryption detected on {{ $labels.hostname }}"
+          
+      # Network Security
+      - alert: UnauthorizedPortOpen
+        expr: cyberpulse_unauthorized_ports_open > 0
+        for: 5m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Unauthorized port opened"
+          description: "Port {{ $labels.port }} opened on {{ $labels.hostname }}"
+          
+      - alert: SuspiciousNetworkTraffic
+        expr: cyberpulse_anomalous_traffic_score > 0.8
+        for: 5m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Suspicious network traffic pattern"
+          description: "Anomaly score: {{ $value }}, Source: {{ $labels.source_ip }}"
+          
+      - alert: DDoSAttack
+        expr: rate(cyberpulse_request_rate[1m]) > 10000
+        for: 2m
+        labels:
+          severity: critical
+          team: security
+          auto_mitigate: true
+        annotations:
+          summary: "Potential DDoS attack"
+          description: "Request rate: {{ $value }} req/s"
+          
+      # Authentication & Access
+      - alert: PrivilegeEscalation
+        expr: cyberpulse_privilege_escalation_attempts > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Privilege escalation attempt"
+          description: "User {{ $labels.username }} attempted privilege escalation"
+          
+      - alert: UnauthorizedAPIAccess
+        expr: cyberpulse_unauthorized_api_calls > 10
+        for: 2m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Unauthorized API access attempts"
+          description: "{{ $value }} unauthorized API calls from {{ $labels.source_ip }}"
+          
+      - alert: SuspiciousLoginLocation
+        expr: cyberpulse_geo_anomaly_score > 0.9
+        for: 1m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Login from suspicious location"
+          description: "User {{ $labels.username }} logged in from {{ $labels.country }}"
+          
+      # Compliance & Vulnerability
+      - alert: ComplianceViolation
+        expr: cyberpulse_compliance_score{framework="PCI-DSS"} < 80
+        for: 30m
+        labels:
+          severity: high
+          team: compliance
+        annotations:
+          summary: "Compliance score below threshold"
+          description: "{{ $labels.framework }} compliance at {{ $value }}%"
+          
+      - alert: CriticalVulnerabilityUnpatched
+        expr: cyberpulse_vulnerabilities{severity="CRITICAL"} > 0
+        for: 24h
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Critical vulnerability unpatched"
+          description: "{{ $value }} critical vulnerabilities on {{ $labels.hostname }}"
+          
+      - alert: SSLCertificateExpiring
+        expr: (cyberpulse_ssl_cert_expiry_timestamp - time()) / 86400 < 7
+        for: 1h
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "Certificate for {{ $labels.domain }} expires in {{ $value }} days"
+          
+      # Insider Threat Detection
+      - alert: DataDownloadAnomaly
+        expr: cyberpulse_user_download_volume > 10737418240  # 10GB
+        for: 5m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Abnormal data download detected"
+          description: "User {{ $labels.username }} downloaded {{ $value | humanize }}B"
+          
+      - alert: AfterHoursAccess
+        expr: cyberpulse_afterhours_access{critical_system="true"} > 0
+        for: 5m
+        labels:
+          severity: medium
+          team: security
+        annotations:
+          summary: "After-hours system access"
+          description: "{{ $labels.username }} accessed {{ $labels.system }} at {{ $labels.timestamp }}"
+          
+      # System Integrity
+      - alert: FileIntegrityViolation
+        expr: cyberpulse_file_integrity_violations > 0
+        for: 1m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "File integrity violation detected"
+          description: "{{ $labels.file_path }} was modified on {{ $labels.hostname }}"
+          
+      - alert: UnauthorizedProcessExecution
+        expr: cyberpulse_unauthorized_process_executions > 0
+        for: 1m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Unauthorized process execution"
+          description: "Process {{ $labels.process_name }} executed by {{ $labels.username }}"
+
+  - name: security_performance
+    interval: 1m
+    rules:
+      - alert: SecurityScannerDown
+        expr: up{job="security-scanner"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Security scanner is down"
+          description: "{{ $labels.instance }} has been down for more than 5 minutes"
+          
+      - alert: ThreatIntelligenceFeedStale
+        expr: time() - cyberpulse_threat_intel_last_update > 3600
+        for: 10m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Threat intelligence feed is stale"
+          description: "Last update was {{ $value | humanizeDuration }} ago"
+          
+      - alert: SecurityEventProcessingLag
+        expr: cyberpulse_event_processing_lag_seconds > 60
+        for: 5m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Security event processing lag"
+          description: "Events are {{ $value }}s behind real-time"
+
+  - name: incident_response
+    interval: 30s
+    rules:
+      - alert: IncidentResponseSLABreach
+        expr: cyberpulse_incident_response_time > 300
+        for: 1m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Incident response SLA breached"
+          description: "Incident {{ $labels.incident_id }} response time: {{ $value }}s"
+          
+      - alert: AutomatedResponseFailed
+        expr: cyberpulse_automated_response_failures > 0
+        for: 1m
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Automated response failed"
+          description: "Failed to execute {{ $labels.action }} for incident {{ $labels.incident_id }}"
+          
+      - alert: CriticalAssetCompromised
+        expr: cyberpulse_compromised_assets{tier="1"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+          pager: true
+          executive_notification: true
+        annotations:
+          summary: "Critical asset compromised"
+          description: "Tier 1 asset {{ $labels.asset_name }} has been compromised"
