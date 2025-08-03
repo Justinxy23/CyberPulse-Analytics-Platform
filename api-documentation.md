@@ -622,10 +622,10 @@ curl -X GET https://api.cyberpulse.io/api/v1/dashboard/metrics \
 ## Support
 
 For API support, please contact:
-- Email: api-support@cyberpulse.io
-- Documentation: https://docs.cyberpulse.io
-- Status Page: https://status.cyberpulse.io
+- Email: justincollege05@gmail.com
+- Documentation: In the works
+- Status Page: In the works
 
 ---
 
-*Last Updated: January 2024*
+*Last Updated: August 2025*
